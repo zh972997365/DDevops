@@ -1,276 +1,336 @@
-# DDevops · Jenkins 钉钉发布系统
+# DDevops · Jenkins 钉钉自动化发布平台
 
-基于钉钉机器人的 Jenkins 持续集成发布系统。单个 Go 进程同时提供 Web 管理后台、钉钉机器人、定时调度器与健康检查；**前端 Vue3 SPA 在编译期嵌入二进制，运行时不依赖任何静态目录，也不需要 Docker**。
+一个 Go 单进程应用：同时提供 Web 管理后台、钉钉机器人、定时发布调度与健康检查。三个触发入口共用同一套构建服务与权限规则，前端 Vue3 产物在编译期通过 `go:embed` 内嵌进二进制，运行时不依赖独立的前端服务或容器。
 
-> 部署只需一个二进制（或 `go run .`）：不单独起前端、不依赖容器。改了前端代码后，重新构建前端并重新编译/运行 Go 即可。
+## 项目介绍
 
-三个触发入口（Web 手动构建、钉钉指令、定时任务）共用同一个 `BuildService`，构建规则、参数名与发布历史的写入逻辑只有一份实现。Web 与钉钉机器人也共用同一套权限口径。
+DDevops 把 Jenkins 的参数化构建收敛为统一的发布入口，解决三类问题：
 
----
+- **发布入口分散**：Web 手动构建、钉钉群指令、定时任务三条链路，统一走 `BuildService`，构建参数、引用归一与历史写入只有一份实现。
+- **构建规则硬编码**：测试 / 预发 / 生产等环境在「环境管理」中集中配置，环境决定使用分支参数还是版本 Tag 参数，任务只关联环境 ID，不再各自判断。
+- **权限口径不一致**：Web 与钉钉共用 `jobScopeFor` 计算任务范围，管理员全量、普通用户仅限「可构建项目」。
 
-## 1. 功能总览
+同时支持多个 Jenkins 实例（服务管理）、发布历史与统计、钉钉通讯录选人，以及会话持久化（重启不掉线）。
 
-### 1.1 Web 管理后台
+运行形态：一个进程内启动 Web 服务（默认 `8081`）、健康检查（默认 `8080`）、钉钉 Stream 长连接、定时调度器四个 goroutine。
 
-前端使用 history 路由，登录页之外的页面都需要鉴权，管理员页面额外校验角色。
+## 技术栈
 
-| 页面 | 路径 | 主要能力 |
-| --- | --- | --- |
-| 概括总览 | `/` | 今日发布、近 14 日趋势、定时队列、环境矩阵、最近发布与失败待办 |
-| 任务管理 | `/jobs` | 任务列表、筛选排序、批量导出、详情抽屉、手动触发构建 |
-| 新建 / 编辑任务 | `/jobs/new`、`/jobs/:id/edit` | 独立表单页：任务 ID、环境、Jenkins 路径、服务与规则预览 |
-| 定时任务 | `/tasks` | 新建（任务下拉支持搜索）、执行时间、按状态分组、取消与删除、按执行时间倒序 |
-| 发布历史 | `/history` | 表格展示、统计卡（总数/成功/失败/今日）、任务·环境·状态·日期筛选、分页、失败行标红、构建链接 |
-| 环境管理 | `/environments`（管理员） | CRUD、分支/Tag 构建方式、默认分支与参数名、拖拽排序、关联任务数、改动影响确认 |
-| 服务管理 | `/servers`（管理员） | 多 Jenkins 实例 CRUD、Token 列表隐藏、拖拽排序、默认实例不可删、配置热更新 |
-| 用户管理 | `/permissions`（管理员） | 用户 CRUD、admin 保护、钉钉选人搜索与通讯录同步、可构建项目分配 |
+| 层次 | 技术 | 版本 | 说明 |
+| --- | --- | --- | --- |
+| 语言 | Go | 1.25.0 | 单进程服务端 |
+| Web 框架 | Gin | v1.12.0 | HTTP 路由与中间件 |
+| 数据库访问 | sqlx | v1.4.0 | 结构体映射与事务 |
+| 数据库驱动 | modernc.org/sqlite | v1.46.2 | 纯 Go SQLite，无需 CGO；启用 WAL，单连接 |
+| 认证 | golang.org/x/crypto | v0.48.0 | bcrypt 密码摘要 |
+| 钉钉 | open-dingtalk/dingtalk-stream-sdk-go | v0.9.1 | Stream 模式机器人，无需公网回调地址 |
+| 其他后端依赖 | gin-contrib/cors、google/uuid、joho/godotenv、mozillazg/go-pinyin | — | CORS、UUID、`.env` 加载、姓名转拼音 |
+| 前端框架 | Vue | ^3.5.13 | Composition API，无 UI 组件库 |
+| 路由 / 状态 | Vue Router / Pinia | ^4.5.0 / ^2.3.0 | history 路由、登录态与界面偏好 |
+| 构建 | Vite | ^5.4.11 | 产物输出到 `internal/webui/dist` |
+| 样式 | Tailwind CSS | ^3.4.17 | 设计令牌见 `frontend/src/styles/tokens.css` |
+| 图标 | lucide-vue-next | ^1.0.0 | 线性图标 |
 
-界面为浅色为主的克制玻璃拟态：浅色主题的画布、侧栏、顶栏同为浅色系，用一档中性底与细描边分层；深色主题整体翻转，侧栏与顶栏自然为深色。配色以石墨中性承载信息，低饱和雾钢蓝只用于操作与状态，避免和发布结果抢注意力。支持浅/深主题、舒适/紧凑密度、标准/增强两档动效、`⌘K` 全局搜索、侧栏滑块、详情抽屉、表格排序/筛选/分页/批量选择，以及空态、加载骨架与错误重试。设计令牌集中在 `frontend/src/styles/tokens.css`，组件原语在 `global.css` 与 `components/base`，业务页面不写零散配色；完整规范见 `frontend/DESIGN.md`。
+仓库中**未发现** Dockerfile、Makefile、CI 配置与 OpenAPI/Swagger 文档；接口说明依据 `internal/router` 与 `internal/handler` 的实际实现整理。
 
-认证：bcrypt 密码摘要（历史明文密码首次登录自动升级）；会话存 `sessions` 表，30 天有效，重启不掉线；改密或删号会踢掉旧会话。
+## 快速开始
 
-**手动构建的版本 Tag（生产环境）**
-
-生产环境（Tag 构建）的「版本 Tag」字段是一个下拉框，数据**直接来自 Jenkins 任务自身的 Git Parameter**，而不是本系统维护的 GitLab 凭据：
-
-- 取数端点：`GET /job/<任务路径>/api/json`，解析 Git Parameter 插件暴露的 `allValueItems`（与 Jenkins 构建页下拉同源）。
-- 插件会在 Jenkins 服务器上用**任务 SCM 配置的 Git 凭据**执行 `git ls-remote`，因此私有仓库也能正常取到，本系统无需额外维护 GitLab Token。
-- 下拉仅展示**最近 10 个 Tag、最新在最上方**，纯下拉选择、不手填（如 Jenkins 未返回可用 Tag，下拉禁用并提示重试）。
-- 该请求是只读 GET，**不会触发构建**。
-
-### 1.2 钉钉机器人（Stream 长连接）
-
-在群里 `@机器人` 使用，所有指令都会先做权限校验，且权限口径与 Web 完全一致（见 1.5）。
-
-| 指令 | 说明 |
-| --- | --- |
-| `帮助` / `help` | 帮助卡片（含基本指令、默认分支/版本规则、定时任务、示例） |
-| `测试` | 只看测试环境任务，一个任务一条项目符号 |
-| `预发` | 只看预发环境任务 |
-| `生产` | 只看生产环境任务 |
-| `<任务ID或短码> [分支或Tag]` | 立即构建；省略引用时按环境规则回落；任务不在授权范围内返回「无任务权限」卡片 |
-| `定时(年月日时分) <任务ID或短码> [分支或Tag]` | 创建定时，如 `定时(202611051800) pop-admin 20261105u01` |
-| `定时列表` | 列出**自己创建且授权**的待执行定时任务 |
-| `取消定时 <任务ID或短码>` | 只能取消自己创建的定时 |
-
-任务列表使用 ActionCard 的 markdown 正文：`测试` / `预发` / `生产` 分别输出对应环境，一个任务一条项目符号，任务名用真实 ID，短码只放在括号里作为输入提示；不输出汇总、环境计数或页脚说明。卡片沿用旧版视觉：`###` 标题、`---` 分隔线、`#### 🔹` 章节、`**加粗字段**`，环境用 `<font color>` 区分（测试蓝、预发橙、生产绿）。短码保持纯文本，不使用反引号或表格，避免客户端丢失或错行。构建结果仍以卡片回执；缺少版本 Tag 时会单独提示正确指令格式，不会笼统报「构建失败」。
-
-### 1.3 定时调度器
-
-启动即检查一次，之后每分钟扫描 `pending` 任务：到点置 `executing` → 调用 `BuildService` → `completed` / `failed` → 写入发布历史。状态包含 `pending`、`executing`、`completed`、`failed`、`cancelled`。
-
-### 1.4 构建核心
-
-`BuildRule` 是构建规则的唯一来源，由环境配置派生，包含模式、参数名、默认引用、是否必填：
-
-| 模式 | 引用行为 | 传给 Jenkins 的参数 |
-| --- | --- | --- |
-| Tag 构建 | 必须显式填写版本 Tag（如 `20261105u01`），空值或非法字符直接拒绝 | 环境的标签参数名，如 `Tags` / `GIT_TAG` |
-| 分支构建 | 留空使用环境默认分支；未带前缀时自动补 `origin/` | 环境的分支参数名，如 `branch` / `release_branch` |
-
-关键约束：Tag 模式下漏填**不会**静默回落到测试分支。参数名填错会导致 Jenkins 读不到参数、Job 内部校验失败，因此环境编辑页会展示影响面并要求二次确认。
-
-调用 Jenkins 使用官方 `buildWithParameters` 端点，服务地址与任务路径会做斜杠归一，每次构建都写入 `publish_history`。
-
-### 1.5 权限模型
-
-系统只有两种角色：`admin` 与 普通用户，权限在 Web 与钉钉两端完全一致。
-
-**角色能力**
-
-- `admin`：全量权限，不受任务范围限制；可进入用户管理 / 服务管理 / 环境管理三个管理员页面；可删除、编辑所有任务、定时与历史；钉钉通讯录接口仅 admin 可用。
-- 普通用户：仅能在「可构建项目」列表内的任务上操作。
-
-**可构建项目（allowed_jobs）**
-
-`permissions.allowed_jobs` 为 JSON 数组，存放该用户可构建 / 查看的任务 ID 列表。
-
-- 显式勾选了项目列表的普通用户：只能构建、在任务列表查看、查看发布历史、创建定时中属于该列表的任务。
-- `allowed_jobs` 为**空数组 `[]`**：视为「无任何授权任务」——该用户看不到任何任务、无法构建。旧版「空列表即全量」的向后兼容逻辑已移除。
-- 因此，新增的普通用户若未分配项目，会被锁定为无可用任务，需管理员在「用户管理」中为其分配。
-- 部分更新语义：`PUT /api/permissions/:userId` 若请求体未提交 `allowedJobs`，沿用旧值，避免「只重置密码」的请求被误写成全量授权。
-
-**Web 与钉钉同一套口径**
-
-`jobScopeFor(role, allowedJobs)` 被 Web API（`jobScope`）与钉钉消息处理（`resolveScope`）同时调用，保证两端行为一致，不出现「Web 能建、钉钉不能」或反之的割裂。
-
-**数据可见性（按角色）**
-
-- 发布历史：admin 看所有用户、所有环境的执行记录（含执行人）；普通用户只看到自己触发的记录。
-- 定时任务：admin 看全部；普通用户只看自己创建的。
-
-**会话**
-
-bcrypt 密码；会话存 `sessions` 表，30 天 TTL，重启 / 多副本有效；改密或删号会踢掉旧会话。
-
----
-
-## 2. 架构
-
-```
-main
- ├── config          读取 .env / 环境变量
- ├── repository      SQLite 数据访问（幂等迁移在此）
- ├── service         Jenkins / 钉钉 / 调度器 / BuildService
- ├── handler         API + 钉钉消息与卡片
- ├── router          路由、SPA 托管、健康检查
- └── middleware      鉴权
-frontend/src         Vue3 + Vite SPA，产物经 internal/webui (go:embed) 内嵌
-```
-
-技术栈：Go 1.25 + Gin、SQLite（纯 Go 驱动、WAL、单连接）、Vue3 + Vite5 + Pinia（无 UI 框架）、钉钉 Stream SDK、bcrypt。
-
-进程启动 4 个 goroutine：
-
-1. Web 服务（`WEB_PORT`，默认 `8081`）
-2. 健康检查（`HEALTH_PORT`，默认 `8080`，`GET /health`）
-3. 钉钉 Stream 长连接
-4. 定时调度器
-
-### 目录
-
-| 路径 | 内容 |
-| --- | --- |
-| `internal/auth` | 密码摘要与会话校验 |
-| `internal/config` | 配置加载 |
-| `internal/model` | 数据模型与 `BuildRule` |
-| `internal/repository` | 建表、幂等迁移、各实体 CRUD |
-| `internal/service` | Jenkins 客户端、构建服务、调度器、钉钉服务 |
-| `internal/handler` | HTTP API 与钉钉消息/卡片渲染 |
-| `internal/router` | 路由注册、SPA 回退、健康检查 |
-| `internal/webui` | `go:embed` 嵌入前端产物 |
-| `frontend/src` | views / components / composables / api / stores / router |
-
----
-
-## 3. 快速开始
-
-### 3.1 环境要求
+### 环境要求
 
 - Go 1.25+
-- Node.js 18+（仅构建前端时需要）
-- 可访问的 Jenkins 服务与 API Token
-- 钉钉企业内部机器人（使用 Stream 模式）
+- Node.js 18+（仅在需要重新构建前端时使用；仓库已包含构建好的 `internal/webui/dist`）
+- 可访问的 Jenkins 服务及 API Token（可选，缺少时无法触发构建）
+- 钉钉企业内部机器人，Stream 模式（可选，未配置时钉钉服务不启动）
 
-### 3.2 配置
+### 配置
 
-在项目根目录创建 `.env`（不创建则使用环境变量与以下默认值）：
+复制示例配置并按实际环境填写：
 
-```dotenv
-# 默认 Jenkins 服务（自动注册 id=jenkins）
-JENKINS_BASE_URL=https://jenkins.example.com
-JENKINS_USER=your_username
-JENKINS_TOKEN=your_api_token
-
-# 第二套 Jenkins 服务（可选，自动注册 id=jenkins2）
-JENKINS2_BASE_URL=
-JENKINS2_USER=
-JENKINS2_TOKEN=
-
-# 钉钉 Stream 机器人
-DINGTALK_CLIENT_ID=your_client_id
-DINGTALK_CLIENT_SECRET=your_client_secret
-
-# 首次启动写入的初始管理员
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=admin123
-
-# 数据库与端口
-SQLITE_DB_PATH=data/jenkins.db
-WEB_PORT=8081
-HEALTH_PORT=8080
+```bash
+cp .env.example .env
 ```
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `SQLITE_DB_PATH` | `jenkins.db` | SQLite 文件路径，测试可用 `:memory:`；当前项目 `.env` 指向 `data/jenkins.db` |
-| `JENKINS_*` | 空 | 默认实例连接信息 |
-| `JENKINS2_*` | 空 | 可选的第二实例 |
-| `DINGTALK_*` | 空 | 留空时钉钉服务不启动 |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin` / `admin123` | 仅首次启动时 seed |
-| `WEB_PORT` / `HEALTH_PORT` | `8081` / `8080` | Web 与健康检查端口 |
+| `SQLITE_DB_PATH` | `jenkins.db` | SQLite 文件路径；仓库内常用 `data/jenkins.db`，使用前确保目录存在 |
+| `JENKINS_BASE_URL` / `JENKINS_USER` / `JENKINS_TOKEN` | 空 | 默认 Jenkins 实例，启动时自动注册为 ID `jenkins` |
+| `JENKINS2_BASE_URL` / `JENKINS2_USER` / `JENKINS2_TOKEN` | 空 | 可选的第二个实例，注册为 ID `jenkins2` |
+| `DINGTALK_CLIENT_ID` / `DINGTALK_CLIENT_SECRET` | 空 | 钉钉机器人凭据；任一为空时钉钉长连接不启动 |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin` / `admin123` | 仅在 `permissions` 表为空时写入初始管理员 |
+| `WEB_PORT` | `8081` | Web 后台端口 |
+| `HEALTH_PORT` | `8080` | 健康检查端口 |
 
-生产环境请务必修改初始管理员密码。
+`.env` 内含凭据，已被 `.gitignore` 排除，不要提交。
 
-### 3.3 构建与启动
+### 安装与启动
 
-前端产物是编译期嵌入的，**任何 `frontend/` 改动都要先重新构建前端，再重新运行 Go**：
+前端产物是编译期嵌入的，完整流程如下：
 
 ```bash
-# 1) 构建前端（输出到 ../internal/webui/dist，随后被 go:embed 内嵌）
+# 1. 构建前端（输出到 internal/webui/dist）
 cd frontend
 npm install
 npm run build
-
-# 2) 回到根目录，直接运行（推荐，单进程即可，无需单独起前端、无需 Docker）
 cd ..
+
+# 2. 运行（单进程，无需单独启动前端）
 go run .
 
-# 或者编译为二进制后运行
-# go build -o ddevops .
-# ./ddevops
+# 也可以编译后运行
+go build -o ddevops .
+./ddevops
 ```
 
-开发时可启动 Vite 调试前端（`http://localhost:5173`），配置里已把 `/api` 代理到 `http://localhost:8081`，后端服务需同时保持运行：
+若只运行仓库中已有的前端产物，可跳过第 1 步直接 `go run .`。
+
+### 开发模式
+
+后端保持运行，另开一个终端启动 Vite；`/api` 已代理到 `http://localhost:8081`：
 
 ```bash
 cd frontend && npm run dev
 ```
 
-注意 Vite 只用于开发调试，正式运行始终由 Go 进程提供内嵌的静态资源。
+Vite 仅用于开发调试，正式运行始终由 Go 进程提供内嵌静态资源。
 
-启动后：
+### 访问
 
-- Web 后台：`http://localhost:8081`
-- 健康检查：`http://localhost:8080/health`
-- 默认账号：`admin` / `admin123`
+- Web 后台：<http://localhost:8081>
+- 健康检查：<http://localhost:8080/health>（返回纯文本 `OK`）
+- 初始账号：`admin` / `admin123`（首次登录后请修改密码）
 
----
+> 任何 `frontend/` 改动都必须重新 `npm run build` 并重启 Go 进程，否则运行的仍是旧界面。
 
-## 4. 配置要点
+## 功能概括
 
-### 4.1 环境管理
+### Web 管理后台
 
-环境是构建规则的载体，每个任务关联一个环境。环境表单包含：
+| 页面 | 路径 | 主要能力 |
+| --- | --- | --- |
+| 概括总览 | `/` | 今日发布、近 14 日成功率、运行中、待执行；14 日发布趋势；定时队列；环境矩阵（关联任务数）；最近发布；近 14 日失败待接手 |
+| 任务管理 | `/jobs` | 关键词 / 环境 / 服务筛选、排序、分页、行选择（复制 ID、导出 CSV）、详情抽屉、构建 / 编辑 / 删除、最近构建信息 |
+| 新建 / 编辑任务 | `/jobs/new`、`/jobs/:id/edit` | 任务 ID、Jenkins 路径、所属服务、环境；钉钉短码由后端自动生成 |
+| 定时任务 | `/tasks` | 新建（任务搜索、分支/Tag、执行时间）、状态筛选、待执行倒计时、取消、删除、详情 |
+| 发布历史 | `/history` | 总数 / 成功 / 失败 / 今日统计；任务、环境、状态、日期筛选；分页；失败原因；导出 CSV；复制构建链接 |
+| 环境管理（管理员） | `/environments` | 创建 / 编辑 / 删除、分支或 Tag 构建方式、默认引用、参数名、拖拽排序、关联任务数提示 |
+| 服务管理（管理员） | `/servers` | 多 Jenkins 实例 CRUD、Token 隐藏、拖拽排序、默认实例 `jenkins` 不可删除、保存后热更新客户端 |
+| 用户管理（管理员） | `/permissions` | 用户 CRUD、重置密码、角色设置、钉钉选人搜索与通讯录同步、可构建项目分配 |
 
-- **环境名称**：仅用于展示（钉钉卡片文案、历史筛选），不直接改变构建参数
-- **构建方式**：分支构建 / Tag 构建，决定是否强制填写版本 Tag
-- **默认分支**：分支构建留空时使用
-- **分支参数名 / 标签参数名**：真正传给 Jenkins 的参数名
+界面能力：浅色 / 深色主题、舒适 / 紧凑密度、标准 / 增强动效、`⌘K` 命令面板、通知面板（今日失败与待执行计划）、侧栏折叠、响应式布局，以及统一的空态、加载骨架与错误重试。
 
-不同 Jenkins 上 Job 定义的参数名可能不同（例如有的叫 `Tags`、有的叫 `GIT_TAG`）。遇到这种情况，新建另一个环境并分别配置参数名即可，不需要改代码。参数名只允许字母、数字、下划线，且不能以数字开头。
+### 钉钉机器人（Stream 长连接）
 
-编辑环境时，页面会显示关联任务数；改动会影响这些任务**下一次及以后**的构建，正在执行与历史记录不受影响。检测到构建相关字段变化时会逐条列出并要求确认。
+在群里 `@机器人` 使用，所有指令先做权限校验：
 
-### 4.2 任务与服务
+| 指令 | 说明 |
+| --- | --- |
+| `帮助` / `help` | 返回使用帮助卡片 |
+| `测试` / `预发` / `生产` | 按环境列出当前用户可见的任务，一个任务一行 |
+| `<任务ID或短码> [分支或Tag]` | 立即构建；分支构建省略引用时回落环境默认分支，生产环境必须提供版本 Tag |
+| `定时(YYYYMMDDHHmm) <任务ID或短码> [分支或Tag]` | 创建定时发布，例：`定时(202611051800) pop-admin 20261105u01` |
+| `定时列表` | 列出自己创建且授权范围内的待执行定时任务 |
+| `取消定时 <任务ID或短码>` | 仅能取消自己创建的定时任务 |
 
-- 任务的「任务路径」应指向可构建的路径，例如 `/view/test/job/xxx/build`；系统会换算为 `buildWithParameters`
-- 服务地址的末尾斜杠与任务路径的开头斜杠会自动归一，不会拼出 `//`
-- 服务列表不返回 Token；编辑时 Token 留空表示保持原值
-- 任务 ID 既是主键也是任务名，创建后仍可修改。改名会在事务里同步 `scheduled_tasks.task_id` 与 `publish_history.task_id`，定时任务和历史不会断链。前端会二次确认，因为钉钉指令需改用新 ID、旧 ID 立即失效
-- 任务表不保存环境名副本：环境名一律按 `env_id` 实时读取，环境改名后任务列表、定时任务、发布历史、钉钉卡片立即同步
-- 新 ID 不能与已有任务重复，重复时返回 400
-- 有任务关联的环境不允许删除
+构建结果以 ActionCard 回执，环境用颜色区分（测试蓝 / 预发橙 / 生产绿）；失败时返回 Jenkins 错误摘要。
 
-### 4.3 发布历史
+### 定时调度
 
-服务端分页，按触发时间倒序，硬过滤近一年；支持任务、环境、状态、日期范围筛选，记录包含触发方式（手动/定时/钉钉）、触发人、分支或 Tag、结果与构建链接。
+- 启动时检查一次，之后每分钟扫描 `pending` 任务；到点改为 `executing`，调用 `BuildService`，结束后改为 `completed` 或 `failed` 并写入发布历史。
+- 状态：`pending`、`executing`、`completed`、`failed`、`cancelled`。
+- 同一任务同时只允许一个待执行计划；执行时间不得早于当前时间。
 
-环境列只按 `env_id` 归属，环境名由前端用当前环境配置换算，因此历史里不会出现改名前的旧环境名。
+### 构建规则
 
-### 4.4 用户管理与授权
+构建规则由环境配置派生（`Environment.Rule()`）：
 
-- 用户管理页可增删改用户、搜索 / 同步钉钉通讯录（`admin` 专属）。
-- 每个普通用户通过「可构建项目」勾选其能操作的项目列表；未勾选即空列表，该用户登录后无任何可用任务。
-- `admin` 始终全量，不受可构建项目限制，也不能被删除。
-- 钉钉用户与 Web 用户是两套身份体系：钉钉侧通过工号解析 Web 权限（`resolveScope`），因此同一人在钉钉端享有的任务范围取决于其 Web 账号的 `allowed_jobs` 配置。
+| 模式 | 引用要求 | 默认引用 | 传给 Jenkins 的参数名 |
+| --- | --- | --- | --- |
+| Tag 构建（`isProd=true`） | 必须显式提供，空值或非法字符直接拒绝 | 无回退 | 环境的 `param_name`，未配置时 `Tags` |
+| 分支构建（`isProd=false`） | 可省略，省略时使用默认引用；未带 `origin/` 前缀会自动补齐 | `default_ref`，未配置时 `origin/test` | 环境的 `param_name`，未配置时 `branch` |
 
----
+- 调用 Jenkins 使用 `buildWithParameters`；服务地址与任务路径会做斜杠归一。
+- 网络错误最多重试 3 次；Jenkins 返回 5xx 时会尝试补齐任务的全部参数后重试一次，并从错误页提取可读描述。
+- 生产环境版本 Tag 下拉来自 Jenkins 任务自身的 Git Parameter（`api/json` 的 `allValueItems`），前端展示最近 10 个、最新在最上方；该请求只读，不会触发构建。
 
-## 5. 运维说明
+### 权限模型
 
-- **单进程运行**：只需运行一个 Go 进程（`go run .` 或编译后的二进制），前端已被内嵌，不要在前面再单独部署一份前端静态服务。
-- **改前端必须重建**：任何前端改动后，必须 `npm run build` 重建并重启 Go 进程，否则看到的仍是旧界面。
-- **生产敏感任务**：涉及生产发布的 Jenkins 任务（如 `线上-8080` 等）请在 Jenkins 侧自行触发/验证，避免通过本系统误触发。
-- **健康检查**：`GET /health` 用于存活探测，默认端口 `HEALTH_PORT`(8080)。
-- **数据库**：SQLite 单文件（当前为 `data/jenkins.db`），备份时直接拷贝该文件即可（建议先停服或确保 WAL 已落盘）。
+- 角色只有 `admin` 与普通用户；管理员可进入环境 / 服务 / 用户管理，且不受任务范围限制。
+- 普通用户通过 `allowed_jobs`（JSON 数组）限定可构建与可见的任务；空数组表示**没有任何授权任务**，不再兼容「空列表即全量」。
+- Web 使用登录账号（`username`），钉钉使用工号（`user_id`）查询同一张 `permissions` 表，两端共用 `jobScopeFor`。
+- 发布历史：管理员看全部（含执行人）；普通用户只看自己触发的记录。定时任务：管理员看全部，普通用户只看自己创建的。
+- 密码使用 bcrypt；历史明文密码在首次成功登录后自动升级为摘要。
+
+### 数据库
+
+SQLite 单文件，启动时建表并执行幂等迁移，共 9 张表：
+
+`jobs`（任务）、`environments`（环境与构建规则）、`servers`（Jenkins 实例）、`scheduled_tasks`（定时任务）、`publish_history`（发布历史）、`permissions`（用户与授权）、`sessions`（登录会话）、`dingtalk_users`（通讯录缓存）、`dingtalk_sync_meta`（同步时间）。
+
+## API 接口
+
+### 通用约定
+
+- 基础路径：`/api`；请求与响应均为 JSON（健康检查除外）。
+- 登录后需在请求头携带**原始 token**：`Authorization: <token>`，不是 `Bearer <token>`。
+- 登录接口之外的所有 `/api` 路由都要求登录；管理员接口额外校验角色，失败返回 `403`。
+- 错误响应统一为 `{"error": "说明"}`。
+- 时间字段为本地时间的 RFC3339 / `YYYY-MM-DD HH:mm` 字符串（按接口标注）。
+
+| 状态码 | 含义 |
+| --- | --- |
+| `200` | 查询或更新成功 |
+| `201` | 创建成功 |
+| `400` | 参数错误、业务约束不满足（时间早于当前、重复定时、环境仍被任务引用等） |
+| `401` | 未登录或会话过期 |
+| `403` | 权限不足（非管理员或任务不在授权范围） |
+| `404` | 资源不存在 |
+| `500` | 服务端错误 |
+
+### 认证
+
+| 方法 | 路径 | 权限 | 参数 | 返回 |
+| --- | --- | --- | --- | --- |
+| `POST` | `/api/login` | 公开 | `{"username":"...","password":"..."}` | `{"token":"...","role":"admin\|user"}` |
+| `POST` | `/api/logout` | 登录 | 无 | `{"message":"已退出"}` |
+
+### 任务
+
+| 方法 | 路径 | 权限 | 参数 | 返回 |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/jobs` | 登录 | 无 | 任务数组，普通用户已按授权过滤 |
+| `GET` | `/api/jobs/:id/git-tags` | 登录 + 任务授权 | 路径参数 `id` | `{"tags":[],"available":true,"source":"jenkins"}`；不可用时返回 `available:false` 与 `reason` |
+| `POST` | `/api/jobs/:id/build` | 登录 + 任务授权 | `{"refValue":"分支或Tag"}` | `{"message":"构建已触发","buildUrl":"..."}` |
+| `POST` | `/api/jobs` | 管理员 | `{"id","jobPath","serverId","envId"}` | `201 {"message":"创建成功"}`，短码自动生成 |
+| `PUT` | `/api/jobs/:id` | 管理员 | 同上，`id` 可改为新任务名 | `{"message":"..."}`；改名会同步定时任务与历史 |
+| `DELETE` | `/api/jobs/:id` | 管理员 | 无 | `{"message":"删除成功"}` |
+
+任务对象字段：`id`、`jobPath`、`serverId`、`envId`、`shortCode`、`createdAt`、`updatedAt`。短码按环境生成：生产 `P`、预发 `S`、其余 `T`，后接两位序号（如 `P01`）。
+
+### 定时任务
+
+| 方法 | 路径 | 权限 | 参数 | 返回 |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/tasks` | 登录 | 查询参数 `status`（可选，`pending` / `executing` / `completed` / `failed` / `cancelled`） | 定时任务数组 |
+| `POST` | `/api/tasks` | 登录 + 任务授权 | `{"taskId":"...","refValue":"...","scheduleTime":"YYYY-MM-DD HH:mm"}` | `201 {"message":"定时任务创建成功"}` |
+| `POST` | `/api/tasks/:id/cancel` | 创建者本人或管理员 | 无 | `{"message":"已取消"}` |
+| `DELETE` | `/api/tasks/:id` | 管理员 | 无 | `{"message":"删除成功"}` |
+
+定时任务对象字段：`id`、`taskId`、`refValue`、`scheduleTime`、`createdBy`、`createdName`、`createdAt`、`status`、`webhookUrl`、`executeTime`、`errorMessage`。
+
+### 发布历史与总览
+
+| 方法 | 路径 | 权限 | 参数 | 返回 |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/history` | 登录 | `page`（默认 1）、`size`（默认 20，最大 200）、`envId`、`status`（`success` / `failed`）、`search`（任务 ID 模糊匹配）、`from` / `to`（`YYYY-MM-DD`） | `{"data":[],"total":0,"page":1,"size":20}` |
+| `GET` | `/api/history/stats` | 登录 | 无 | `{"total":0,"success":0,"failed":0,"today":0,"rate":0}`（近一年） |
+| `GET` | `/api/overview` | 登录 | 无 | `{"jobs":{"total":0},"today":{"builds":0,"success":0,"rate":0},"running":0,"pending":0,"latestBuilds":{}}` |
+
+补充说明：
+
+- `/api/history` 仍接受旧参数 `env`（环境名），服务端会换算为 `env_id`；结果固定只查近一年，按触发时间倒序。
+- `stats` 与 `overview` 中的 `rate` 是 0–1 的比例，由前端换算为百分比展示。
+- `latestBuilds` 以任务 ID 为键，值为 `{"status","time","url"}`。
+- 历史记录字段：`id`、`taskId`、`envId`、`refValue`、`triggerType`（`manual` / `scheduled`）、`triggerBy`、`triggerName`、`triggerTime`、`buildStatus`、`buildUrl`、`errorMessage`。
+
+### 环境
+
+| 方法 | 路径 | 权限 | 参数 | 返回 |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/environments` | 登录 | 无 | 环境数组，每项额外包含 `jobCount` |
+| `POST` | `/api/environments` | 管理员 | `{"name","isProd","defaultRef","defaultBranchParam","defaultTagParam"}` | `201 {"message":"创建成功"}` |
+| `PUT` | `/api/environments/:id` | 管理员 | 同上 | `{"message":"更新成功"}` |
+| `PUT` | `/api/environments/reorder` | 管理员 | `{"ids":["..."]}`，必须与现有环境集合完全一致 | `{"message":"顺序已保存"}` |
+| `DELETE` | `/api/environments/:id` | 管理员 | 无 | 仍有关联任务时返回 `400` |
+
+环境对象字段：`id`、`name`、`isProd`、`defaultRef`、`defaultBranchParam`、`defaultTagParam`、`sortOrder`、`createdAt`、`updatedAt`、`jobCount`。实际生效的参数名只保存一份（`param_name`）：Tag 模式取 `defaultTagParam`，分支模式取 `defaultBranchParam`；参数名只允许字母、数字、下划线且不能以数字开头。
+
+首次建库会预置三个环境：
+
+| 名称 | 构建方式 | 默认引用 | 参数名 |
+| --- | --- | --- | --- |
+| 测试环境 | 分支 | `origin/test` | `branch` |
+| 预发环境 | 分支 | `origin/release` | `release_branch` |
+| 生产环境 | Tag | `origin/master` | `Tags` |
+
+### Jenkins 服务
+
+| 方法 | 路径 | 权限 | 参数 | 返回 |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/servers` | 管理员 | 无 | 服务数组，不返回 `token` |
+| `GET` | `/api/servers/options` | 登录 | 无 | `[{"id","name"}]` |
+| `POST` | `/api/servers` | 管理员 | `{"id","name","baseUrl","user","token"}` | `201 {"message":"创建成功"}` |
+| `PUT` | `/api/servers/:id` | 管理员 | 同上；`token` 留空表示保持原值 | `{"message":"更新成功"}` |
+| `PUT` | `/api/servers/reorder` | 管理员 | `{"ids":["..."]}` | `{"message":"顺序已保存"}` |
+| `DELETE` | `/api/servers/:id` | 管理员 | 无 | ID 为 `jenkins` 的默认实例不可删除 |
+
+服务对象字段：`id`、`name`、`baseUrl`、`user`、`sortOrder`、`createdAt`。
+
+### 用户与权限
+
+| 方法 | 路径 | 权限 | 参数 | 返回 |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/permissions` | 管理员 | 无 | 用户数组（不返回密码摘要） |
+| `POST` | `/api/permissions` | 管理员 | `{"userId","username","userName","password","webRole","allowedJobs":[]}` | `201 {"message":"创建成功"}` |
+| `PUT` | `/api/permissions/:userId` | 管理员 | 同上；`password` 留空不改，`allowedJobs` 缺省沿用旧值 | `{"message":"更新成功"}` |
+| `DELETE` | `/api/permissions/:userId` | 管理员 | 无 | `admin` 账号不可删除 |
+
+- `userId` 同时是钉钉工号；`username` 是 Web 登录名。
+- `webRole` 取值 `admin` / `user`，缺省为 `user`。
+- 修改密码或删除用户会使该用户的全部会话立即失效。
+
+### 钉钉通讯录（管理员）
+
+| 方法 | 路径 | 权限 | 参数 | 返回 |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/dingtalk/users` | 管理员 | `name`（姓名、拼音或用户 ID 模糊搜索） | `[{"userid","name","pinyin"}]` |
+| `POST` | `/api/dingtalk/sync` | 管理员 | 无 | `{"message":"同步成功","count":0}` |
+
+### 健康检查
+
+| 方法 | 路径 | 端口 | 返回 |
+| --- | --- | --- | --- |
+| `GET` | `/health` | `HEALTH_PORT`（默认 8080） | 纯文本 `OK` |
+
+## 项目结构
+
+```text
+DDevops/
+├── main.go                      # 入口：初始化 DB、仓储、服务、路由，启动四个 goroutine
+├── go.mod / go.sum              # Go 模块与依赖
+├── .env.example                 # 配置模板（复制为 .env）
+├── README.md
+├── data/                        # SQLite 数据文件目录（数据库本身被 .gitignore 排除）
+├── internal/
+│   ├── auth/                    # bcrypt 密码校验、会话签发与失效
+│   ├── config/                  # 从 .env / 环境变量加载配置
+│   ├── model/                   # 领域模型与 BuildRule（唯一构建规则来源）
+│   ├── repository/              # SQLite 访问、建表、幂等迁移（jobs / tasks / history / ...）
+│   ├── service/                 # Jenkins 客户端、BuildService、调度器、钉钉通讯录
+│   ├── handler/                 # HTTP API、钉钉消息分发、卡片与列表渲染
+│   ├── middleware/              # AuthMiddleware / AdminMiddleware
+│   ├── router/                  # /api 路由、SPA 回退、静态资源缓存策略、健康检查
+│   └── webui/                   # go:embed 内嵌 dist；webui.go
+└── frontend/
+    ├── package.json             # vue / vite / tailwind / pinia
+    ├── vite.config.js           # 构建输出到 ../internal/webui/dist，开发代理 /api
+    ├── tailwind.config.js
+    ├── DESIGN.md                # 前端设计规范
+    ├── index.html
+    ├── public/                  # brand-mark.svg、favicon.ico
+    └── src/
+        ├── main.js / App.vue
+        ├── router/              # 路由与登录 / 管理员守卫
+        ├── stores/              # auth（登录态）、ui（主题 / 密度 / 动效 / 搜索）
+        ├── api/                 # 按资源封装的接口调用
+        ├── views/               # 9 个页面：总览、任务、任务表单、定时、历史、环境、服务、用户、登录
+        ├── components/
+        │   ├── base/            # 按钮、输入、下拉、表格、分页、抽屉、弹窗、确认框
+        │   ├── data/            # DataTable、KPI、状态 / 环境徽标、空态、错误态
+        │   ├── feature/         # 构建弹窗、任务选择器、钉钉选人
+        │   ├── layout/          # 侧栏、顶栏、命令面板、通知、页头
+        │   └── ui/              # CountUp 等少量展示组件
+        ├── composables/         # 防抖、倒计时、拖拽排序、权限、Toast
+        ├── constants/           # 导航、状态、环境、角色常量
+        ├── utils/               # 请求封装、格式化、CSV 导出、校验
+        └── styles/              # tokens.css（设计令牌）、global.css
+```
