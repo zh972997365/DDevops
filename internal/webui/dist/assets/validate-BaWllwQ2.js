@@ -1,0 +1,1 @@
+const s=(r,t="此项")=>String(r??"").trim()?"":`${t}不能为空`,n=r=>{const t=String(r??"").trim();return t?/^[A-Za-z0-9._/-]+$/.test(t)?"":"只能包含字母、数字、点、横线、斜杠":""},e=r=>{const t=String(r??"").trim();return t?/^https?:\/\/[^\s]+$/.test(t)?"":"需以 http:// 或 https:// 开头":""};export{s as r,n as t,e as u};

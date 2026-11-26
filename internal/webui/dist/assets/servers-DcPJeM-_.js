@@ -1,0 +1,1 @@
+import{Q as r}from"./index-BvXIL9ct.js";const s=e=>`/servers/${encodeURIComponent(e)}`,p={list:()=>r.get("/servers"),options:()=>r.get("/servers/options"),create:e=>r.post("/servers",e),update:(e,t)=>r.put(s(e),t),remove:e=>r.del(s(e)),reorder:e=>r.put("/servers/reorder",{ids:e})};export{p as s};

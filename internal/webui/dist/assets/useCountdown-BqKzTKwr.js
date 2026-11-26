@@ -1,0 +1,1 @@
+import{o as t,U as r,r as u}from"./index-BvXIL9ct.js";const o=u(Date.now());let n=null,e=0;function l(){return t(()=>{e+=1,n||(n=setInterval(()=>o.value=Date.now(),1e3))}),r(()=>{e-=1,e<=0&&n&&(clearInterval(n),n=null)}),{now:o}}export{l as u};

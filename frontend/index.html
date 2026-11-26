@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/brand-mark.svg" />
+    <link rel="alternate icon" type="image/x-icon" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f4f6f7" />
+    <meta name="description" content="DDevOps · Jenkins × 钉钉自动化发布平台" />
+    <title>DDevOps · 自动化发布平台</title>
+    <script>
+      // 首屏前恢复主题、密度与动效档位，避免闪白 / 跳变
+      try {
+        const theme = localStorage.getItem('devops_theme')
+        const density = localStorage.getItem('devops_density')
+        const motion = localStorage.getItem('devops_motion')
+        const root = document.documentElement
+        root.classList.toggle('dark', theme === 'dark')
+        root.classList.toggle('light', theme !== 'dark')
+        root.classList.toggle('density-compact', density === 'compact')
+        root.classList.toggle('motion-rich', motion === 'rich')
+        if (theme === 'dark') {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#171d22')
+        }
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

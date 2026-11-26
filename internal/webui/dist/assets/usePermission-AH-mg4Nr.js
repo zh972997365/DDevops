@@ -1,0 +1,1 @@
+import{p as a,z as e}from"./index-BvXIL9ct.js";function d(){const n=a(),t=e(()=>n.isAdmin),r=e(()=>n.isAdmin),c=e(()=>n.isAdmin),u=e(()=>n.isAdmin);function o(i){var s;return n.isAdmin?!0:!!i&&i.createdBy===((s=n.user)==null?void 0:s.username)}return{isAdmin:t,canManage:r,canEdit:c,canDelete:u,canCancel:o}}export{d as u};

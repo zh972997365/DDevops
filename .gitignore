@@ -1,0 +1,29 @@
+# 依赖
+/frontend/node_modules/
+
+# Vite 临时文件
+*.timestamp-*.mjs
+
+# 临时文件 / 本地验证
+*.test
+*.bak
+*.orig
+*.tmp
+.preview/
+.qoder-input-files/
+.qoder-input-images/
+
+# IDE / 工具
+.idea/
+.workbuddy/memory/
+
+# 环境变量（不提交）
+.env
+.env.*
+!.env.example
+
+# SQLite 产物 / 数据库
+/data/*
+
+# 系统文件
+.DS_Store

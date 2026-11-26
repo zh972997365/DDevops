@@ -1,0 +1,1 @@
+[data-v-f77f1d89] tr.row-failed{background:var(--failed-soft)}[data-v-f77f1d89] tr.row-failed td:first-child{box-shadow:inset 2px 0 0 var(--failed)}[data-v-f77f1d89] tr.row-failed:hover{background:color-mix(in srgb,var(--failed-soft) 70%,var(--surface-hover))}@media (max-width: 1023px){[data-v-f77f1d89] tr.row-failed .sticky-col{background:var(--failed-soft)}}

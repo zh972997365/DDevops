@@ -1,0 +1,209 @@
+/* ==========================================================================
+   设计系统 · 唯一令牌来源  ·  DDevOps 发布编排平台
+   --------------------------------------------------------------------------
+   品类判断：发布/交付平台的核心是「环境 + 状态 + 审计」。
+   因此界面保持石墨中性，把颜色预算全部留给发布结果与操作；
+   交互色使用低饱和雾钢蓝，不与成功/失败状态竞争。
+   明暗双主题，侧边栏与顶栏随主题翻转（浅色不为深色底）。
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* —— 画布与表面（冷白，低饱和） —— */
+  --canvas: #f4f6f7;
+  --canvas-2: #e9edef;
+  --surface: rgba(255, 255, 255, 0.84);
+  --surface-solid: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #eff2f4;
+  --surface-hover: #f7f9fa;
+  --overlay: rgba(16, 22, 27, 0.38);
+
+  /* —— 描边与分割 —— */
+  --line: #dfe4e7;
+  --line-strong: #c4ced4;
+  --line-soft: #eaeef0;
+  --hairline: rgba(255, 255, 255, 0.7);
+
+  /* —— 文字 —— */
+  --ink: #161c20;
+  --ink-2: #48535a;
+  --ink-3: #5f6b73;
+  --ink-inverse: #f6f8f9;
+
+  /* —— 侧栏 / 顶栏：浅色主题同为浅色，用一档中性底 + 描边分层 —— */
+  --sidebar: #e9edef;
+  --sidebar-soft: #e0e6e9;
+  --sidebar-line: #d7dfe3;
+  --sidebar-ink: #161c20;
+  --sidebar-ink-2: #48535a;
+  --sidebar-ink-3: #5f6b73;
+  --sidebar-active-bg: #ffffff;
+  --sidebar-active-border: #d3dce1;
+  --sidebar-hover-bg: rgba(22, 28, 32, 0.045);
+  --sidebar-avatar-bg: #e2e8eb;
+  --topbar: #fbfcfc;
+  --topbar-field: rgba(22, 28, 32, 0.04);
+
+  /* —— 登录品牌侧：随主题翻转，浅色主题不压深色 —— */
+  --hero: #e6ecf0;
+  --hero-ink: #161c20;
+  --hero-ink-2: #4c5b65;
+  --hero-line: rgba(22, 28, 32, 0.1);
+  --hero-track: rgba(22, 28, 32, 0.24);
+  --hero-node: rgba(22, 28, 32, 0.4);
+  --hero-sweep: rgba(75, 115, 145, 0.55);
+
+  /* —— 交互色：石墨主操作 + 雾钢蓝强调 —— */
+  --primary: #2c3f4d;
+  --primary-hover: #233440;
+  --primary-active: #1c2a34;
+  --primary-soft: #edf2f5;
+  --primary-ink: #345065;
+  --primary-contrast: #ffffff;
+
+  --accent: #4b7391;
+  --accent-soft: #eaf1f6;
+
+  /* —— 状态色：低饱和，文字均满足 AA —— */
+  --success: #2c6e4e;
+  --success-soft: #e8f2ec;
+  --failed: #a8433a;
+  --failed-soft: #faebe9;
+  --failed-contrast: #ffffff;
+  --warn: #876020;
+  --warn-soft: #f8f1df;
+  --info: #2e5f7c;
+  --info-soft: #e8f0f5;
+  --pending: #58666e;
+  --pending-soft: #eef2f4;
+  --cancelled: #5d6b73;
+  --cancelled-soft: #f1f4f6;
+
+  /* 图表：柱体保持轻，细柱也分得清 */
+  --chart-bar: #7699b2;
+  --chart-bar-alt: #c37b72;
+  --chart-grid: #e6ebee;
+
+  --focus: rgba(52, 80, 101, 0.22);
+  --scrollbar: #c2ccd2;
+  --field-bg: rgba(255, 255, 255, 0.9);
+
+  /* —— 形状 —— */
+  --radius-field: 8px;
+  --radius-card: 10px;
+  --radius-panel: 12px;
+
+  /* —— 阴影：几乎只在浮层出现，卡片靠描边分层 —— */
+  --shadow-card: 0 1px 1px rgba(18, 24, 29, 0.025);
+  --shadow-pop: 0 12px 32px -12px rgba(18, 24, 29, 0.18), 0 0 0 1px rgba(18, 24, 29, 0.02);
+  --shadow-topbar: 0 1px 0 rgba(18, 24, 29, 0.025);
+  --shadow-btn: 0 1px 1px rgba(18, 24, 29, 0.1);
+  --shadow-control: 0 1px 1px rgba(18, 24, 29, 0.03);
+
+  /* —— 动效：短、轻、可关闭 —— */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --dur-fast: 150ms;
+  --dur-base: 200ms;
+  --dur-slow: 240ms;
+
+  /* —— 密度（html.density-compact 覆盖） —— */
+  --row-py: 12px;
+  --card-pad: 20px;
+  --table-font: 12.5px;
+
+  --sidebar-w: 240px;
+  --sidebar-w-sm: 64px;
+  --topbar-h: 56px;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --canvas: #171d22;
+  --canvas-2: #12171b;
+  --surface: rgba(35, 44, 51, 0.86);
+  --surface-solid: #232c33;
+  --surface-raised: #2c363f;
+  --surface-sunken: #1e252b;
+  --surface-hover: rgba(42, 52, 60, 0.92);
+  --overlay: rgba(0, 0, 0, 0.58);
+
+  --line: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(255, 255, 255, 0.18);
+  --line-soft: rgba(255, 255, 255, 0.065);
+  --hairline: rgba(255, 255, 255, 0.05);
+
+  --ink: #e9eef1;
+  --ink-2: #bcc7cd;
+  --ink-3: #9aa8b1;
+  --ink-inverse: #0f1418;
+
+  --sidebar: #262f36;
+  --sidebar-soft: #2e3840;
+  --sidebar-line: rgba(255, 255, 255, 0.09);
+  --sidebar-ink: #e9eef1;
+  --sidebar-ink-2: #b6c2c9;
+  --sidebar-ink-3: #8d9ba4;
+  --sidebar-active-bg: rgba(255, 255, 255, 0.07);
+  --sidebar-active-border: rgba(255, 255, 255, 0.11);
+  --sidebar-hover-bg: rgba(255, 255, 255, 0.05);
+  --sidebar-avatar-bg: #333d46;
+  --topbar: #262f36;
+  --topbar-field: rgba(255, 255, 255, 0.06);
+
+  --hero: #262f36;
+  --hero-ink: #e9eef1;
+  --hero-ink-2: #a4b2bb;
+  --hero-line: rgba(255, 255, 255, 0.1);
+  --hero-track: rgba(255, 255, 255, 0.2);
+  --hero-node: rgba(255, 255, 255, 0.42);
+  --hero-sweep: rgba(143, 178, 198, 0.45);
+
+  --primary: #e8eef2;
+  --primary-hover: #f4f8fa;
+  --primary-active: #d7e0e5;
+  --primary-soft: rgba(255, 255, 255, 0.07);
+  --primary-ink: #c3d8e4;
+  --primary-contrast: #151c21;
+
+  --accent: #8fb2c6;
+  --accent-soft: rgba(143, 178, 198, 0.13);
+
+  --success: #8ecfa9;
+  --success-soft: rgba(142, 207, 169, 0.13);
+  --failed: #ef9a92;
+  --failed-soft: rgba(239, 154, 146, 0.13);
+  --failed-contrast: #2a1413;
+  --warn: #e3bb78;
+  --warn-soft: rgba(227, 187, 120, 0.13);
+  --info: #93c2db;
+  --info-soft: rgba(147, 194, 219, 0.13);
+  --pending: #b9c6cf;
+  --pending-soft: rgba(185, 198, 207, 0.13);
+  --cancelled: #9fadb7;
+  --cancelled-soft: rgba(159, 173, 183, 0.13);
+
+  --chart-bar: #7fa4bb;
+  --chart-bar-alt: #d99a91;
+  --chart-grid: rgba(255, 255, 255, 0.1);
+
+  --focus: rgba(143, 179, 201, 0.36);
+  --scrollbar: #46545e;
+  --field-bg: rgba(255, 255, 255, 0.055);
+
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset;
+  --shadow-pop: 0 18px 44px -16px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-topbar: 0 1px 0 rgba(0, 0, 0, 0.35);
+  --shadow-btn: 0 1px 0 rgba(255, 255, 255, 0.1) inset;
+  --shadow-control: none;
+}
+
+html.density-compact {
+  --row-py: 7px;
+  --card-pad: 16px;
+  --table-font: 12px;
+}

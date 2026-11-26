@@ -1,0 +1,11 @@
+import{c as m,k as n,a as r,d as s,t as o,n as l,a1 as i,e as d,m as c,h as p}from"./index-BvXIL9ct.js";/**
+ * @license lucide-vue-next v1.0.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */const u=m("rotate-ccw",[["path",{d:"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8",key:"1357e3"}],["path",{d:"M3 3v5h5",key:"1xhq8a"}]]);/**
+ * @license lucide-vue-next v1.0.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */const x=m("triangle-alert",[["path",{d:"m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3",key:"wmoenq"}],["path",{d:"M12 9v4",key:"juzpu7"}],["path",{d:"M12 17h.01",key:"p32p05"}]]),y={class:"mb-5"},f={class:"flex flex-wrap items-end justify-between gap-x-6 gap-y-3"},h={class:"min-w-0"},g={class:"text-2xl font-semibold tracking-[-0.02em] text-ink"},k={key:0,class:"mt-1 max-w-3xl text-sm leading-6 text-ink-3"},b={key:0,class:"flex flex-wrap items-center gap-2"},B={__name:"PageHeader",props:{title:{type:String,required:!0},subtitle:{type:String,default:""}},setup(t){return(a,e)=>(n(),r("header",y,[s("div",f,[s("div",h,[s("h1",g,o(t.title),1),t.subtitle?(n(),r("p",k,o(t.subtitle),1)):l("",!0)]),a.$slots.actions?(n(),r("div",b,[i(a.$slots,"actions")])):l("",!0)]),i(a.$slots,"meta")]))}},_={class:"flex flex-col items-center justify-center px-6 py-12 text-center"},w={class:"grid h-11 w-11 place-items-center rounded-full border border-line bg-failed-soft text-failed"},$={class:"mt-1 max-w-md text-xs leading-5 text-ink-3"},M={__name:"ErrorState",props:{message:{type:String,default:""},retryable:{type:Boolean,default:!0}},emits:["retry"],setup(t){return(a,e)=>(n(),r("div",_,[s("span",w,[d(c(x),{class:"h-5 w-5"})]),e[2]||(e[2]=s("p",{class:"mt-3 text-[13px] font-medium text-ink"},"数据加载失败",-1)),s("p",$,o(t.message||"请检查服务是否可用，然后重试。"),1),t.retryable?(n(),r("button",{key:0,class:"btn btn-secondary btn-sm mt-4",type:"button",onClick:e[0]||(e[0]=v=>a.$emit("retry"))},[d(c(u),{class:"h-3.5 w-3.5"}),e[1]||(e[1]=p(" 重新加载 ",-1))])):l("",!0)]))}};export{u as R,x as T,B as _,M as a};
